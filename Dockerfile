@@ -1,22 +1,28 @@
+# Use build argument for Node version
 ARG NODE_VERSION=20.14.0
 
+# ---------- Builder Stage ----------
 FROM node:${NODE_VERSION}-alpine AS builder
 
 WORKDIR /usr/src/questionService
 
+# Install dependencies
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 
+# Copy source files
 COPY . .
 
-RUN npx prisma generate
-RUN npm run build
+# Generate Prisma client & build project
+RUN npx prisma generate && npm run build
 
 
+# ---------- Production Stage ----------
 FROM node:${NODE_VERSION}-alpine AS production
 
 WORKDIR /usr/src/questionService
 
+# Copy only required artifacts from builder
 COPY --from=builder /usr/src/questionService/node_modules ./node_modules
 COPY --from=builder /usr/src/questionService/dist ./dist
 COPY --from=builder /usr/src/questionService/generated ./generated
@@ -24,11 +30,12 @@ COPY --from=builder /usr/src/questionService/package*.json ./
 COPY --from=builder /usr/src/questionService/prisma ./prisma
 COPY --from=builder /usr/src/questionService/.env ./
 
-# Using the correct port from your application
+# Expose the app port
 EXPOSE 3000
 
+# Healthcheck for container monitoring
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:3000/health || exit 1
+  CMD wget -qO- http://localhost:3000/health || exit 1
 
-# Run with module-alias for path aliases
+# Run the app with module-alias support
 CMD ["node", "-r", "module-alias/register", "dist/index.js"]
